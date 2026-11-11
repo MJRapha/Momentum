@@ -3,24 +3,27 @@
 // A simple raycast-based grapple hook. On Fire1 (left mouse button by
 // default), it casts from the camera. If it hits something on
 // "grappleableLayer", the player is pulled toward that point until they
-// get close, cancel, or leave the ground voluntarily.
+// get close, release the button, or press Jump (which jumps out of the
+// pull while keeping momentum).
 //
-// This does NOT use a Rigidbody/SpringJoint, so it works directly with
-// the CharacterController-based PlayerMovementController above: it talks
-// to the same CharacterController via a public "ExternalMove" call.
+// This script does NOT move the CharacterController itself. It only
+// tracks grapple state and supplies a pull velocity; PlayerMovementController
+// applies it in its single controller.Move() call. That way gravity doesn't
+// build up during the pull, and the pull speed is kept on release
+// (slingshot) and counts toward momentum-based damage.
 //
 // SETUP:
 //   1. Attach to the same "Player" GameObject as PlayerMovementController.
 //   2. Assign "playerCamera" (the first-person camera).
-//   3. Create a layer (e.g. "Grappleable") for anything the hook can
-//      attach to, and assign it to "grappleableLayer".
+//   3. Put anything the hook can attach to on the layers in
+//      "grappleableLayer" (by default: Wall + Grappleable).
 //   4. (Optional) Assign a LineRenderer for the visual rope.
 //
-// INPUT: Fire1 (default: Left Mouse Button / Ctrl) to fire/release.
+// INPUT: Fire1 (default: Left Mouse Button / Ctrl) hold to grapple, release to let go.
 
 using UnityEngine;
 
-[RequireComponent(typeof(CharacterController))]
+[RequireComponent(typeof(PlayerMovementController))]
 public class GrappleHookController : MonoBehaviour
 {
     [Header("References")]
@@ -36,6 +39,12 @@ public class GrappleHookController : MonoBehaviour
     private CharacterController controller;
     private bool isGrappling;
     private Vector3 grapplePoint;
+    private Vector3 lastPullVelocity;
+
+    public bool IsGrappling => isGrappling;
+    public Vector3 GrapplePoint => grapplePoint;
+
+    private Vector3 BodyCenter => controller != null ? transform.position + controller.center : transform.position;
 
     private void Awake()
     {
@@ -60,7 +69,6 @@ public class GrappleHookController : MonoBehaviour
 
         if (isGrappling)
         {
-            PullTowardGrapplePoint();
             UpdateRopeVisual();
         }
     }
@@ -78,7 +86,8 @@ public class GrappleHookController : MonoBehaviour
             playerCamera.forward,
             out RaycastHit hit,
             maxGrappleDistance,
-            grappleableLayer);
+            grappleableLayer,
+            QueryTriggerInteraction.Ignore);
 
         if (hitSomething)
         {
@@ -93,18 +102,28 @@ public class GrappleHookController : MonoBehaviour
         }
     }
 
-    private void PullTowardGrapplePoint()
+    /// <summary>
+    /// Velocity the player should move with this frame while grappling.
+    /// Called by PlayerMovementController. Releases the grapple once the
+    /// player is within releaseDistance and returns the last pull velocity
+    /// so the momentum carries on.
+    /// </summary>
+    public Vector3 GetPullVelocity(Vector3 from)
     {
-        Vector3 toPoint = grapplePoint - transform.position;
+        if (!isGrappling)
+        {
+            return lastPullVelocity;
+        }
 
+        Vector3 toPoint = grapplePoint - from;
         if (toPoint.magnitude <= releaseDistance)
         {
             StopGrapple();
-            return;
+            return lastPullVelocity;
         }
 
-        Vector3 pullDirection = toPoint.normalized;
-        controller.Move(pullDirection * pullSpeed * Time.deltaTime);
+        lastPullVelocity = toPoint.normalized * pullSpeed;
+        return lastPullVelocity;
     }
 
     private void UpdateRopeVisual()
@@ -114,11 +133,11 @@ public class GrappleHookController : MonoBehaviour
             return;
         }
 
-        rope.SetPosition(0, transform.position);
+        rope.SetPosition(0, BodyCenter);
         rope.SetPosition(1, grapplePoint);
     }
 
-    private void StopGrapple()
+    public void StopGrapple()
     {
         isGrappling = false;
         if (rope != null)
@@ -126,6 +145,4 @@ public class GrappleHookController : MonoBehaviour
             rope.enabled = false;
         }
     }
-
-    public bool IsGrappling => isGrappling;
 }

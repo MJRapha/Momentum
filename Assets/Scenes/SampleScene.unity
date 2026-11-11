@@ -367,7 +367,7 @@ GameObject:
   m_Component:
   - component: {fileID: 678438420}
   - component: {fileID: 678438421}
-  m_Layer: 8
+  m_Layer: 10
   m_Name: DummyEnemy
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -468,7 +468,7 @@ GameObject:
   - component: {fileID: 918276662}
   - component: {fileID: 918276661}
   - component: {fileID: 918276660}
-  m_Layer: 8
+  m_Layer: 10
   m_Name: RightLeg
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -795,7 +795,7 @@ GameObject:
   - component: {fileID: 1233472801}
   - component: {fileID: 1233472800}
   - component: {fileID: 1233472799}
-  m_Layer: 8
+  m_Layer: 10
   m_Name: Hands
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1130,7 +1130,7 @@ GameObject:
   - component: {fileID: 1577834075}
   - component: {fileID: 1577834074}
   - component: {fileID: 1577834073}
-  m_Layer: 8
+  m_Layer: 10
   m_Name: LeftLeg
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1243,7 +1243,7 @@ GameObject:
   - component: {fileID: 1616208296}
   - component: {fileID: 1616208295}
   - component: {fileID: 1616208294}
-  m_Layer: 8
+  m_Layer: 10
   m_Name: Head
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1354,7 +1354,7 @@ GameObject:
   - component: {fileID: 1626126980}
   - component: {fileID: 1626126979}
   - component: {fileID: 1626126978}
-  m_Layer: 8
+  m_Layer: 10
   m_Name: Body
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1515,7 +1515,7 @@ MonoBehaviour:
   releaseDistance: 1.5
   grappleableLayer:
     serializedVersion: 2
-    m_Bits: 2048
+    m_Bits: 2176
 --- !u!114 &1666097157
 MonoBehaviour:
   m_ObjectHideFlags: 0

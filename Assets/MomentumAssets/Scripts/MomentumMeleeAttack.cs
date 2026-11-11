@@ -2,7 +2,7 @@
 //
 // Implements the "Momentum is the Weapon" design pillar: a melee attack
 // whose damage scales with how fast the player is currently moving.
-// Reads speed from PlayerMovementController.CurrentSpeed.
+// Reads speed from PlayerMovementController.Velocity (includes grapple pulls).
 //
 // SETUP:
 //   1. Attach to the same "Player" GameObject as PlayerMovementController.
@@ -12,6 +12,7 @@
 //
 // INPUT: Fire2 (default: Right Mouse Button / Alt) to attack.
 
+using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(PlayerMovementController))]
@@ -30,6 +31,7 @@ public class MomentumMeleeAttack : MonoBehaviour
 
     private PlayerMovementController movement;
     private float cooldownTimer;
+    private readonly HashSet<IDamageable> hitThisSwing = new HashSet<IDamageable>();
 
     private void Awake()
     {
@@ -56,19 +58,27 @@ public class MomentumMeleeAttack : MonoBehaviour
             return;
         }
 
-        float damage = baseDamage + movement.CurrentSpeed * damagePerSpeedUnit;
+        // Full 3D speed, so grapple pulls and dives count as momentum too.
+        float damage = baseDamage + movement.Velocity.magnitude * damagePerSpeedUnit;
 
         Collider[] hits = Physics.OverlapSphere(
             playerCamera.position + playerCamera.forward * attackRange,
             attackRadius,
-            hittableLayer);
+            hittableLayer,
+            QueryTriggerInteraction.Ignore);
 
+        hitThisSwing.Clear();
         foreach (Collider hitCollider in hits)
         {
-            if (hitCollider.TryGetComponent(out IDamageable damageable))
+            // Colliders are often on child objects (body parts), with the
+            // IDamageable script on the root, so search up the hierarchy.
+            IDamageable damageable = hitCollider.GetComponentInParent<IDamageable>();
+            if (damageable == null || !hitThisSwing.Add(damageable))
             {
-                damageable.TakeDamage(damage, hitCollider.ClosestPoint(playerCamera.position));
+                continue; // not damageable, or already hit by this swing via another collider
             }
+
+            damageable.TakeDamage(damage, hitCollider.ClosestPoint(playerCamera.position));
         }
     }
 
