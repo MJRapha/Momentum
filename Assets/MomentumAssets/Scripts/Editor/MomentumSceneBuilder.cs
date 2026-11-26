@@ -9,8 +9,8 @@
 // so whatever it creates is guaranteed to be something Unity itself made.
 //
 // SETUP:
-//   1. Put this file inside a folder literally named "Editor"
-//      (e.g. Assets/MomentumAssets/Editor/MomentumSceneBuilder.cs).
+//   1. Keep this file inside a folder literally named "Editor"
+//      (it lives at Assets/MomentumAssets/Scripts/Editor/MomentumSceneBuilder.cs).
 //      This is required for Unity to treat it as editor-only code.
 //   2. Make sure PlayerMovementController.cs, CameraLook.cs,
 //      GrappleHookController.cs, MomentumMeleeAttack.cs, IDamageable.cs,
@@ -213,7 +213,7 @@ public static class MomentumSceneBuilder
 
         AssignLayerMask(movement, "groundLayer", LayerMask.NameToLayer("Ground"));
         AssignLayerMask(movement, "wallLayer", LayerMask.NameToLayer("Wall"));
-        AssignLayerMask(grapple, "grappleableLayer", LayerMask.NameToLayer("Wall"));
+        AssignLayerMask(grapple, "grappleableLayer", LayerMask.GetMask("Wall", "Grappleable"), isMask: true);
         AssignLayerMask(attack, "hittableLayer", LayerMask.NameToLayer("Hittable"));
     }
 
@@ -230,7 +230,8 @@ public static class MomentumSceneBuilder
         so.ApplyModifiedProperties();
     }
 
-    private static void AssignLayerMask(Object component, string fieldName, int layerIndex)
+    // Pass a layer index (default) or, with isMask: true, a ready-made bit mask.
+    private static void AssignLayerMask(Object component, string fieldName, int layerIndexOrMask, bool isMask = false)
     {
         SerializedObject so = new SerializedObject(component);
         SerializedProperty prop = so.FindProperty(fieldName);
@@ -239,7 +240,7 @@ public static class MomentumSceneBuilder
             Debug.LogWarning($"MomentumSceneBuilder: field '{fieldName}' not found on {component.GetType().Name}.");
             return;
         }
-        prop.intValue = 1 << layerIndex;
+        prop.intValue = isMask ? layerIndexOrMask : 1 << layerIndexOrMask;
         so.ApplyModifiedProperties();
     }
 

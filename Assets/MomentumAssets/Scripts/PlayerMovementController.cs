@@ -1,8 +1,12 @@
 // PlayerMovementController.cs
 //
 // Core movement for "Momentum". Handles running, jumping, double jumping,
-// wall running and wall jumping. Built on Unity's CharacterController
-// (no Rigidbody needed).
+// wall running, wall jumping and grapple pulls. Built on Unity's
+// CharacterController (no Rigidbody needed).
+//
+// This script is the ONLY place that calls controller.Move(). Other
+// movement sources (e.g. GrappleHookController) feed velocity into it, so
+// speed from any source is preserved and shows up in CurrentSpeed/Velocity.
 //
 // SETUP:
 //   1. Create an empty GameObject named "Player".
@@ -40,7 +44,7 @@ public class PlayerMovementController : MonoBehaviour
     [Header("Wall Run")]
     [SerializeField] private LayerMask wallLayer;
     [SerializeField] private float wallCheckDistance = 0.7f;
-    [SerializeField] private float wallRunSpeed = 9f;
+    [SerializeField] private float wallRunSpeed = 9f;          // minimum speed; faster entries keep their speed
     [SerializeField] private float wallRunGravity = -4f;
     [SerializeField] private float wallRunMaxDuration = 2.5f;
 
@@ -51,6 +55,7 @@ public class PlayerMovementController : MonoBehaviour
     [SerializeField] private float wallJumpLockTime = 0.25f;   // no re-grab / air-steering right after the jump
 
     private CharacterController controller;
+    private GrappleHookController grapple;
     private Vector3 velocity;
     private Vector3 currentMoveDirection;
 
@@ -59,18 +64,26 @@ public class PlayerMovementController : MonoBehaviour
 
     private bool isWallRunning;
     private float wallRunTimer;
+    private float wallRunEntrySpeed;
     private Vector3 wallNormal;
     private Collider currentWallCollider;
     private Collider lastWallCollider; // the wall we just left; can't be re-grabbed until we land
     private float wallJumpLockTimer;
 
     // Exposed so other scripts (e.g. the momentum attack) can read current speed.
+    /// <summary>Horizontal speed (m/s), from any movement source including the grapple.</summary>
     public float CurrentSpeed { get; private set; }
+    /// <summary>Full 3D velocity the player moved with this frame.</summary>
+    public Vector3 Velocity => velocity;
     public bool IsWallRunning => isWallRunning;
+    public bool IsGrounded => isGrounded;
+
+    private Vector3 BodyCenter => transform.position + controller.center;
 
     private void Awake()
     {
         controller = GetComponent<CharacterController>();
+        grapple = GetComponent<GrappleHookController>();
     }
 
     private void Update()
@@ -81,20 +94,28 @@ public class PlayerMovementController : MonoBehaviour
         }
 
         CheckGround();
-        CheckWallRun();
 
-        if (isWallRunning)
+        if (grapple != null && grapple.IsGrappling)
         {
-            HandleWallRunMovement();
+            HandleGrappleMovement();
         }
-        else if (wallJumpLockTimer <= 0f)
+        else
         {
-            HandleGroundAndAirMovement();
-        }
-        // While the wall-jump lock is active we keep the launch velocity untouched.
+            CheckWallRun();
 
-        HandleJumpInput();
-        ApplyGravity();
+            if (isWallRunning)
+            {
+                HandleWallRunMovement();
+            }
+            else if (wallJumpLockTimer <= 0f)
+            {
+                HandleGroundAndAirMovement();
+            }
+            // While the wall-jump lock is active we keep the launch velocity untouched.
+
+            HandleJumpInput();
+            ApplyGravity();
+        }
 
         controller.Move(velocity * Time.deltaTime);
 
@@ -104,11 +125,22 @@ public class PlayerMovementController : MonoBehaviour
 
     private void CheckGround()
     {
-        isGrounded = Physics.Raycast(
-            transform.position,
+        // Short sphere cast from just above the feet. The old ray was
+        // height/2 + distance long from the feet, which counted the player as
+        // grounded up to ~1 m in the air.
+        float radius = controller.radius * 0.9f;
+        Vector3 origin = transform.position + Vector3.up * (radius + 0.05f);
+        bool hitGround = Physics.SphereCast(
+            origin,
+            radius,
             Vector3.down,
-            controller.height / 2f + groundCheckDistance,
-            groundLayer);
+            out _,
+            groundCheckDistance + 0.05f,
+            groundLayer,
+            QueryTriggerInteraction.Ignore);
+
+        // Moving upward (just jumped / launched) never counts as grounded.
+        isGrounded = hitGround && velocity.y <= 0.1f;
 
         if (isGrounded)
         {
@@ -133,7 +165,23 @@ public class PlayerMovementController : MonoBehaviour
         Vector3 targetVelocity = inputDirection * targetSpeed;
 
         float lerpFactor = acceleration * Time.deltaTime * (isGrounded ? 1f : airControlMultiplier);
-        currentMoveDirection = Vector3.Lerp(currentMoveDirection, targetVelocity, lerpFactor);
+
+        float currentSpeed = currentMoveDirection.magnitude;
+        if (!isGrounded && currentSpeed > targetSpeed)
+        {
+            // Momentum preservation: in the air, faster-than-run speed (from a
+            // grapple slingshot or wall jump) is kept. Input only steers it.
+            if (inputDirection.sqrMagnitude > 0.01f)
+            {
+                Vector3 steered = Vector3.Lerp(currentMoveDirection, inputDirection.normalized * currentSpeed, lerpFactor);
+                currentMoveDirection = steered.normalized * currentSpeed;
+            }
+        }
+        else
+        {
+            // Grounded (acts as friction) or below run speed: normal acceleration.
+            currentMoveDirection = Vector3.Lerp(currentMoveDirection, targetVelocity, lerpFactor);
+        }
 
         velocity.x = currentMoveDirection.x;
         velocity.z = currentMoveDirection.z;
@@ -169,6 +217,27 @@ public class PlayerMovementController : MonoBehaviour
         velocity.y += currentGravity * Time.deltaTime;
     }
 
+    // ---------------- Grapple ----------------
+
+    private void HandleGrappleMovement()
+    {
+        EndWallRun();
+
+        // Pull velocity replaces our own. Gravity is skipped so it can't build
+        // up during the pull. When the grapple releases, 'velocity' still holds
+        // the pull vector -> the player is slingshotted forward.
+        velocity = grapple.GetPullVelocity(BodyCenter);
+        currentMoveDirection = new Vector3(velocity.x, 0f, velocity.z);
+
+        if (Input.GetButtonDown("Jump"))
+        {
+            // Jump out of the grapple, keeping horizontal momentum.
+            grapple.StopGrapple();
+            velocity.y = Mathf.Max(velocity.y, jumpForce);
+            hasDoubleJumped = false;
+        }
+    }
+
     // ---------------- Wall Run ----------------
 
     private void CheckWallRun()
@@ -188,13 +257,14 @@ public class PlayerMovementController : MonoBehaviour
 
         RaycastHit hit;
         bool foundWall = false;
+        Vector3 origin = BodyCenter;
 
-        if (Physics.Raycast(transform.position, transform.right, out hit, wallCheckDistance, wallLayer)
+        if (Physics.Raycast(origin, transform.right, out hit, wallCheckDistance, wallLayer)
             && hit.collider != lastWallCollider)
         {
             foundWall = true;
         }
-        else if (Physics.Raycast(transform.position, -transform.right, out hit, wallCheckDistance, wallLayer)
+        else if (Physics.Raycast(origin, -transform.right, out hit, wallCheckDistance, wallLayer)
                  && hit.collider != lastWallCollider)
         {
             foundWall = true;
@@ -227,6 +297,7 @@ public class PlayerMovementController : MonoBehaviour
     {
         isWallRunning = true;
         wallRunTimer = 0f;
+        wallRunEntrySpeed = Mathf.Max(wallRunSpeed, CurrentSpeed); // keep incoming momentum
         hasDoubleJumped = false; // grabbing a wall refreshes the double jump
         if (velocity.y < 0f)
         {
@@ -242,9 +313,18 @@ public class PlayerMovementController : MonoBehaviour
 
     private void HandleWallRunMovement()
     {
-        Vector3 wallForward = transform.forward;
-        velocity.x = wallForward.x * wallRunSpeed;
-        velocity.z = wallForward.z * wallRunSpeed;
+        // Run along the wall surface rather than into it.
+        Vector3 wallForward = Vector3.ProjectOnPlane(transform.forward, wallNormal);
+        wallForward.y = 0f;
+        if (wallForward.sqrMagnitude < 0.0001f)
+        {
+            wallForward = transform.forward;
+        }
+        wallForward.Normalize();
+
+        velocity.x = wallForward.x * wallRunEntrySpeed;
+        velocity.z = wallForward.z * wallRunEntrySpeed;
+        currentMoveDirection = new Vector3(velocity.x, 0f, velocity.z);
     }
 
     private void WallJump()
