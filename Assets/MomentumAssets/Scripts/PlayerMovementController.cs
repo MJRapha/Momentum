@@ -123,6 +123,22 @@ public class PlayerMovementController : MonoBehaviour
         CurrentSpeed = horizontalVelocity.magnitude;
     }
 
+    /// <summary>
+    /// Clears all motion state (used on respawn so the player doesn't keep
+    /// falling speed or a grapple slingshot from before death).
+    /// </summary>
+    public void ResetMotion()
+    {
+        velocity = Vector3.zero;
+        currentMoveDirection = Vector3.zero;
+        CurrentSpeed = 0f;
+        hasDoubleJumped = false;
+        wallJumpLockTimer = 0f;
+        lastWallCollider = null;
+        currentWallCollider = null;
+        EndWallRun();
+    }
+
     private void CheckGround()
     {
         // Short sphere cast from just above the feet. The old ray was

@@ -24,6 +24,8 @@
 //   - A Player rig: CharacterController + camera + all movement/attack
 //     scripts, with every Inspector reference already wired up
 //   - Two TestDummyEnemy cubes (Hittable layer) to try the attack on
+//   - PlayerHealth on the player, a KillZone under the level, two
+//     Checkpoints and a test DamageZone hazard (see below)
 //   - Four simple colored Materials, saved to Assets/MomentumAssets/Materials
 
 #if UNITY_EDITOR
@@ -55,8 +57,81 @@ public static class MomentumSceneBuilder
         BuildWallRunCorridor(wallMat);
         BuildPlayer(playerMat);
         BuildEnemies(enemyMat);
+        AddHealthAndRespawnToScene();
 
         Debug.Log("Momentum gray-box test level built. Press Play and try wall-running through the corridor.");
+    }
+
+    // ---------------- Health & Respawn ----------------
+
+    // Safe to run on an existing scene: it only ADDS what's missing and never
+    // deletes or rebuilds your objects.
+    [MenuItem("Momentum/Add Health & Respawn To Scene")]
+    public static void AddHealthAndRespawnToScene()
+    {
+        GameObject player = GameObject.Find("Player");
+        if (player == null)
+        {
+            Debug.LogWarning("MomentumSceneBuilder: no GameObject named 'Player' in the scene.");
+            return;
+        }
+
+        if (player.GetComponent<PlayerHealth>() == null)
+        {
+            Undo.AddComponent<PlayerHealth>(player);
+        }
+
+        if (GameObject.Find("KillZone") == null)
+        {
+            // Big trigger under the whole level: falling off the map kills you.
+            GameObject killZone = new GameObject("KillZone");
+            Undo.RegisterCreatedObjectUndo(killZone, "Create KillZone");
+            killZone.transform.position = new Vector3(0f, -10f, 20f);
+            BoxCollider box = killZone.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size = new Vector3(300f, 2f, 300f);
+            killZone.AddComponent<KillZone>();
+        }
+
+        CreateCheckpointIfMissing("Checkpoint_Start", player.transform.position, player.transform.rotation);
+        CreateCheckpointIfMissing("Checkpoint_CorridorEnd", new Vector3(0f, 0f, 31f), Quaternion.identity);
+
+        if (GameObject.Find("Hazard_Test") == null)
+        {
+            EnsureFolder(RootFolder);
+            EnsureFolder(MaterialsFolder);
+            Material hazardMat = CreateOrLoadMaterial("Hazard_Orange", new Color(1.0f, 0.45f, 0.05f));
+            GameObject hazard = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Undo.RegisterCreatedObjectUndo(hazard, "Create Hazard");
+            hazard.name = "Hazard_Test";
+            hazard.transform.position = new Vector3(6f, 0.05f, 12f);
+            hazard.transform.localScale = new Vector3(3f, 0.1f, 3f);
+            hazard.GetComponent<Renderer>().sharedMaterial = hazardMat;
+            BoxCollider hazardBox = hazard.GetComponent<BoxCollider>();
+            hazardBox.isTrigger = true;
+            hazardBox.size = new Vector3(1f, 20f, 1f); // tall trigger so standing on the slab registers
+            hazard.AddComponent<DamageZone>();
+        }
+
+        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(player.scene);
+        Debug.Log("Health & respawn added. Save the scene (Ctrl+S), then press Play.");
+    }
+
+    private static void CreateCheckpointIfMissing(string name, Vector3 position, Quaternion rotation)
+    {
+        if (GameObject.Find(name) != null)
+        {
+            return;
+        }
+
+        GameObject checkpoint = new GameObject(name);
+        Undo.RegisterCreatedObjectUndo(checkpoint, "Create Checkpoint");
+        checkpoint.transform.SetPositionAndRotation(position, rotation);
+        BoxCollider box = checkpoint.AddComponent<BoxCollider>();
+        box.isTrigger = true;
+        box.center = new Vector3(0f, 1.5f, 0f);
+        box.size = new Vector3(4f, 3f, 1f);
+        checkpoint.AddComponent<Checkpoint>();
     }
 
     // ---------------- Layers ----------------
